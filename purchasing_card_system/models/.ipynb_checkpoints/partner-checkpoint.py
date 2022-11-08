@@ -5,7 +5,8 @@ class ProductTemplate(models.Model):
     interest_account_id = fields.Many2one('account.account',domain = [('internal_type','=','receivable')])
     admin_account_id = fields.Many2one('account.account',domain = [('internal_type','=','receivable')])
     penalty_account_id = fields.Many2one('account.account',domain = [('internal_type','=','receivable')])
-
+    is_tax_included = fields.Float()
+    down_payment_included = fields.Boolean()
     is_tax_registeerd = fields.Boolean()
     is_pre_payment = fields.Boolean()    
     commission_type = fields.Selection([('days','Days'),('months','Months')],default = 'days')    

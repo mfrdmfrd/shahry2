@@ -60,13 +60,15 @@
                 <header>
                     <field name = 'admin_fees_invoice_created' invisible = '1'/>
                     <field name = 'invoice_created' invisible = '1'/>
-                    <field name = 'is_discount_created' invisible = '1'/>
+                    <field name = 'is_admin_paid' invisible = '1'/>
 
                     <button name = 'running' string = 'Run' type = 'object' states = 'draft'/>
                     <button name = 'create_bill' string = 'Create Bill' type = 'object' attrs="{'invisible': ['|',('count_bill', '!=', 0),('state','!=','running')]}"/>
                     <button name = 'create_invoice' string = 'Create Invoice' type = 'object' attrs="{'invisible': ['|',('invoice_created', '=',True),('state','!=','running')]}"/>
                     <button name = 'create_admin_fees_invoice' string = 'Create Admin Fees Invoice' type = 'object' attrs="{'invisible': ['|',('admin_fees_invoice_created', '=',True),('state','!=','running')]}"/>
-                    <button name = 'apply_discount' string = 'Apply Discount' type = 'object' attrs="{'invisible': ['|',('is_discount_created', '=', True),('state','!=','running')]}"/>
+                    <button name = 'pay_admin_fees' string = 'Pay Admin Fees' type = 'object' attrs="{'invisible': ['|',
+'|',('admin_fees_invoice_created', '=',False),('state','!=','running'),('is_admin_paid','=',True)]}"/>
+                    <button name = 'apply_discount' string = 'Apply Discount' type = 'object' attrs="{'invisible': [('state','!=','running')]}"/>
                     <field name = 'state' widget = 'statusbar'/>
                 </header>
                 <sheet>
@@ -97,8 +99,13 @@
                                 <field name="end_date" /> 
                                 <field name="installment_product_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
                                 <field name="intrest_product_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
+                                <field name="intrest_real_product_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
                                 <field name="admin_fees_product_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
                                 <field name="penalty_product_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
+                                <field name="commission_product_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
+                                <field name="tax_product_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
+                                
+                                
                                 <field name="journal_id" attrs = "{'readonly':[('state','!=','draft')]}"/> 
                         </group>
                              <group>                
@@ -107,34 +114,39 @@
                                 <field name="actual_purchase_amount" attrs = "{'readonly':[('state','!=','draft')]}"/>    
                                 <field name="number_of_installments" attrs = "{'readonly':[('state','!=','draft')]}"/> 
                                 <field name="commission_rate" widget = 'percentage'/>
+                                <field name="tax_rate" widget = 'percentage'/>
+
                                 <field name="benefit_rate" widget = 'percentage'/>  
                                 <field name="benefit_rate_amount" />  
                                 <field name="installment_amount" />                 
                                 <field name="penalty_amount" attrs = "{'readonly':[('state','!=','draft')]}"/> 
                                 <field name="admin_fees_amount" attrs = "{'readonly':[('state','!=','draft')]}"/>
                                  <field name="amount_due" />
-                                 <field name="discount_rate" widget = 'percentage'  attrs = "{'readonly':[('is_discount_created', '=', True)]}"/>
+                                 <field name = "is_discount_created" invisible = '1'/>
+<!--                                  <field name="discount_rate" widget = 'percentage'  attrs = "{'readonly':[('is_discount_created', '=', True)]}"/> -->
                             </group>
                     </group>
                     <notebook >
                         <page name="installment" string="Installments" attrs = "{'invisible' : [('state','=','draft')]}">
-                            <field name = 'installment_ids' readonly = '1'>
-                                <tree editable = 'bottom'>
-                                    <field name = 'due_date'/>
-                                    <field name = 'amount' string = 'Principle Amount'/>
-                                    <field name = 'benefit_rate_amount'/>
-                                    <field name = 'discount' widget = 'percentage'/>
-                                    <field name = 'actual_benefit_rate_amount'/>
-                                    <field name = 'actual_fees'/>
-                                    <field name = 'penalty_amount'/>
-                                    <field name = 'actual_penalty_amount'/>
-                                    <field name = 'actual_amount'/>
-                                    <field name = 'payment_reference'/>
-                                    <field name = 'paid_amount'/>
-                                    <field name = 'due_amount'/>
-                                    <field name = 'payment_status'/>
-                                    <button name = 'pay' string = 'Pay' attrs = "{'invisible' : [('payment_status','=','paid')]}" type = 'object'/>
+                            <field name = 'installment_ids' create = '0' delete = '0'>
+                                <tree editable = 'bottom' create = '0' delete = '0'>
+                                    <field name = 'due_date' readonly = '1'/>
+                                    <field name = 'amount' string = 'Principle Amount' readonly = '1'/>
+                                    <field name = 'benefit_rate_amount' readonly = '1'/>
+                                    <field name = 'discount'  attrs = "{'readonly':[('is_discount_created', '=', True)]}"/>
+                                    <field name = 'actual_benefit_rate_amount' readonly = '1'/>
+                                    <field name = 'actual_fees' readonly = '1'/>
+                                    <field name = 'penalty_amount' readonly = '1'/>
+                                    <field name = 'actual_penalty_amount' readonly = '1'/>
+                                    <field name = 'actual_amount' readonly = '1'/>
+                                    <field name = 'payment_reference' readonly = '1'/>
+                                    <field name = 'paid_amount' readonly = '1'/>
+                                    <field name = 'due_amount' readonly = '1'/>
+                                    <field name = 'payment_status' readonly = '1'/>
+                    <field name = 'is_discount_created' invisible = '1'/>
 
+                                    <button name = 'pay' string = 'Pay' attrs = "{'invisible' : [('payment_status','=','paid')]}" type = 'object'/>
+                                    <button name = 'apply_discount' string = 'Apply Discount' type = 'object' attrs="{'invisible': [('is_discount_created', '=', True)]}"/>
                                     <button name = 'show_penalty' string = 'Show Penalty' attrs = "{'invisible' : ['|',('payment_status','=','paid'),('penalty_amount','=',0)]}" type = 'object'/>
                                 </tree>
                             </field>

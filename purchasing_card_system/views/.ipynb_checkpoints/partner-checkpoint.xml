@@ -16,6 +16,8 @@
                 </field>
                 <field name="vat" position="after">
                     <field name = 'is_tax_registeerd'/>
+                    <field name = 'is_tax_included'/>
+                    <field name = 'down_payment_included'/>
                     <field name = 'is_pre_payment'/>
                     <field name = 'commission_type'/>
                     <field name = 'commission_period'/>

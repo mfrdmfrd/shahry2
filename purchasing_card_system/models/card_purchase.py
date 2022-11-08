@@ -18,7 +18,10 @@ class ProductTemplate(models.Model):
     buying_date = fields.Date()
     installment_product_id = fields.Many2one('product.product',required = True)
     intrest_product_id = fields.Many2one('product.product',required = True)
+    intrest_real_product_id = fields.Many2one('product.product',required = True)
     penalty_product_id = fields.Many2one('product.product',required = True)
+    commission_product_id = fields.Many2one('product.product',required = True)
+    tax_product_id = fields.Many2one('product.product',required = True)
 
     number_of_installments = fields.Integer(required = True)
     total_installments_amount = fields.Float()
@@ -30,6 +33,8 @@ class ProductTemplate(models.Model):
         for rec in self:
             rec.actual_purchase_amount = rec.down_payment + rec.total_installments_amount
     commission_rate = fields.Float(required = True)
+    tax_rate = fields.Float(required = True)
+
     benefit_rate = fields.Float(required = True)
     benefit_rate_amount = fields.Float(compute = '_set_benefit_rate_amount')
     @api.model
@@ -60,22 +65,9 @@ class ProductTemplate(models.Model):
     def apply_discount(self):
         benifet_rate_diffrence = 0
         for line in self.installment_ids:
-            if line.payment_status != 'paid':
-                benifet_rate_diffrence += line.benefit_rate_amount *  self.discount_rate
-                line.discount = self.discount_rate
-        vals = {
-            'move_type' : 'entry',
-            'ref' : f'{self.name} - discount entry',
-            'card_purchase_inverse_id' : self.id,
-            'line_ids' : [
-                self.get_journal_line(account_id = self.customer_id.interest_account_id,partner = self.customer_id,credit = benifet_rate_diffrence),
-                self.get_journal_line(account_id = self.intrest_product_id.property_account_income_id,partner = self.customer_id,debit = benifet_rate_diffrence),
-            ]
-        }
+            if not(line.is_discount_created):
+                line.apply_discount()
         self.is_discount_created = True
-        m = self.env['account.move'].create(vals)
-        m.action_post()
-        return self.show_account_move(ids = self.inverse_entries_ids.ids)
     @api.depends('discount_rate','amount_due')
     def _set_amount_due_after_discount(self):
         for rec in self:
@@ -114,6 +106,7 @@ class ProductTemplate(models.Model):
             'due_date' : date,
             'amount' : amount,
             'benefit_rate_amount' : benefit_rate_amount,
+            'actual_benefit_rate_amount' : benefit_rate_amount
         }
     invoice_ids = fields.One2many('account.move','card_purchase_invoice_id')
     bill_ids = fields.One2many('account.move','card_purchase_bill_id')
@@ -151,20 +144,44 @@ class ProductTemplate(models.Model):
         return self.show_account_move(ids = self.inverse_entries_ids.ids)
     def show_payment(self):
         return self.show_account_move(ids = self.payment_entries_ids.ids)
+    def get_tax_commission_amount(self):
+        commission_added_rate = 1 if not(self.vendor_id.is_tax_included) else 1.14
+        tax_added_rate = 1 if not(self.vendor_id.is_tax_registeerd) else 1.14
+        commission_amount = self.total_installments_amount if not(self.vendor_id.down_payment_included) else self.actual_purchase_amount
+        comission_actual_amount = self.commission_rate * (commission_amount / commission_added_rate)
+        tax_actual_amount = self.tax_rate * (self.total_installments_amount / tax_added_rate) if not(self.vendor_id.is_pre_payment) else 0
+        return (comission_actual_amount,tax_actual_amount)
+        
+        
     def create_bill(self):
         vals = {
             'partner_id' : self.vendor_id.id,
             'ref' : f'{self.name} - main bill',
             'card_purchase_bill_id' : self.id,
             'move_type' : 'in_invoice',
-            'invoice_line_ids' : [(0,0,{
+        }
+        commission,tax = self.get_tax_commission_amount()
+        lines = [(0,0,{
                 'product_id' : self.installment_product_id.id,
                 'name' : self.installment_product_id.name,
                 'quantity' : 1,
                 'price_unit' : self.total_installments_amount
+            }),
+                 (0,0,{
+                'product_id' : self.commission_product_id.id,
+                'name' : self.commission_product_id.name,
+                'quantity' : 1,
+                'price_unit' :-commission
             })
             ]
-        }
+        if tax:
+            lines.append((0,0,{
+                'product_id' : self.tax_product_id.id,
+                'name' : self.tax_product_id.name,
+                'quantity' : 1,
+                'price_unit' :-tax
+            }))
+        vals['invoice_line_ids'] = lines
         self.env['account.move'].create(vals)
         return self.show_account_move(ids = self.bill_ids.ids)
     def get_journal_line(self,account_id,partner = False,debit = 0,credit = 0):
@@ -211,6 +228,20 @@ class ProductTemplate(models.Model):
         m.action_post()
         self.admin_fees_invoice_created = True
         return self.show_account_move(ids = self.invoice_ids.ids)
+    is_admin_paid = fields.Boolean(copy = False)
+    def pay_admin_fees(self):
+        vals = {
+            'move_type' : 'entry',
+            'ref' : f'{self.name}  - admin fees payment entry',
+            'card_purchase_payment_id' : self.id,
+            'line_ids' : [
+                self.get_journal_line(account_id = self.customer_id.admin_account_id,partner = self.customer_id,credit = self.admin_fees_amount),
+                self.get_journal_line(account_id = self.vendor_id.property_account_payable_id,partner = self.vendor_id,debit = self.admin_fees_amount),
+            ]
+        }
+        m = self.env['account.move'].create(vals)
+        m.action_post()
+        self.is_admin_paid = True
     
 
 
@@ -220,12 +251,29 @@ class ProductTemplate(models.Model):
     due_date = fields.Date()
     amount = fields.Float()
     benefit_rate_amount = fields.Float()
-    actual_benefit_rate_amount = fields.Float(compute = '_apply_discount',store = True)
+    actual_benefit_rate_amount = fields.Float(readonly = True)
     discount = fields.Float(default = 0)
-    @api.depends('amount','benefit_rate_amount','discount')
-    def _apply_discount(self):
+    is_discount_created = fields.Boolean(copy = False)
+    @api.onchange('discount')
+    def _constrain_discount(self):
+        if self.discount > self.benefit_rate_amount:
+                raise ValidationError('discount cant exceed benfit rate amount')
+    def apply_discount(self):
         for rec in self:
-            rec.actual_benefit_rate_amount = rec.benefit_rate_amount * (1 - rec.discount)
+            rec.is_discount_created = True
+            rec.actual_benefit_rate_amount = rec.benefit_rate_amount  - rec.discount
+            vals = {
+                'move_type' : 'entry',
+                'ref' : f'{rec.purchase_id.name} {rec.due_date}  - discount entry',
+                'card_purchase_inverse_id' : self.purchase_id.id,
+                'line_ids' : [
+                    rec.purchase_id.get_journal_line(account_id = rec.purchase_id.customer_id.interest_account_id,partner = rec.purchase_id.customer_id,credit = rec.discount),
+                    rec.purchase_id.get_journal_line(account_id = self.purchase_id.intrest_product_id.property_account_income_id,partner = rec.purchase_id.customer_id,debit = rec.discount),
+                ]
+            }
+            self.is_discount_created = True
+            m = self.env['account.move'].create(vals)
+            m.action_post()
     actual_fees = fields.Float(compute = '_set_actual_fees',store = True)
     @api.depends('amount','actual_benefit_rate_amount')
     def _set_actual_fees(self):
@@ -286,7 +334,7 @@ class ProductTemplate(models.Model):
             'partner_account_id' : self.purchase_id.customer_id.interest_account_id.id,
             'invoice_line_ids' : [
                 (0,0,{
-                    'product_id' : self.purchase_id.intrest_product_id.id,
+                    'product_id' : self.purchase_id.intrest_real_product_id.id,
                     'quantity' : 1,
                     'price_unit' : self.actual_benefit_rate_amount
                 })
@@ -333,8 +381,7 @@ class ProductTemplate(models.Model):
         principle = self.amount
         penalty = self.actual_penalty_amount
         lines = [
-            self.purchase_id.get_journal_line(account_id = self.purchase_id.journal_id.default_account_id,partner = False,debit = interest + penalty),
-            self.purchase_id.get_journal_line(account_id = self.purchase_id.vendor_id.property_account_payable_id,partner = self.purchase_id.vendor_id,debit = principle),
+            self.purchase_id.get_journal_line(account_id = self.purchase_id.journal_id.default_account_id,partner = False,debit = interest + penalty + principle),
             self.purchase_id.get_journal_line(account_id = self.purchase_id.customer_id.property_account_receivable_id,partner = self.purchase_id.customer_id,credit = principle),
             self.purchase_id.get_journal_line(account_id = self.purchase_id.customer_id.interest_account_id,partner = self.purchase_id.customer_id,credit = interest),
         ]
